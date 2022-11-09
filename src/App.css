@@ -1,93 +1,88 @@
 .pianoPage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 10px;
 }
-.controls{
-  display: flex;
-  flex-direction: row;
+.controls {
+    display: flex;
+    flex-direction: row;
 }
-.stop{
-  border: 1px solid red;
-  margin: 20px;
-     }
-.start{
-
-  border: 1px solid black;
-  margin: 20px;
+.stop {
+    border: 1px solid red;
+    margin: 20px;
+}
+.start {
+    border: 1px solid black;
+    margin: 20px;
 }
 .piano {
-  display: flex;
-  height: calc((100vw - 30px) * 0.1 * 1.95);
-  max-width: calc(100vw - 30px);
-  padding-left: 10px;
-  padding-right: 10px;
-  overflow: auto;
-  flex-wrap: nowrap;
+    display: flex;
+    height: calc((100vw - 30px) * 0.1 * 1.95);
+    max-width: calc(100vw - 30px);
+    padding-left: 10px;
+    padding-right: 10px;
+    overflow: auto;
+    flex-wrap: nowrap;
 }
 .key {
-  border-radius: 50%;
-  width: calc((100vw - 30px) * 0.1);
-  aspect-ratio: 1 / 1;
-  color: red;
-  text-align: center;
-  flex-shrink: 0;
+    border-radius: 50%;
+    width: calc((100vw - 30px) * 0.1);
+    aspect-ratio: 1 / 1;
+    color: red;
+    text-align: center;
+    flex-shrink: 0;
 }
 .white {
-  align-self: flex-end;
-  opacity: 0.9;
+    align-self: flex-end;
+    opacity: 0.9;
 }
 .black {
-  margin-left: calc(-1 * (100vw - 30px) * 0.1 * 0.4);
-  margin-right: calc(-1 * (100vw - 30px) * 0.1 * 0.4);
-  z-index: 1;
+    margin-left: calc(-1 * (100vw - 30px) * 0.1 * 0.4);
+    margin-right: calc(-1 * (100vw - 30px) * 0.1 * 0.4);
+    z-index: 1;
 
-  align-self: flex-start;
-  opacity: 0.9;
+    align-self: flex-start;
+    opacity: 0.9;
 }
 .opaque {
-/* Make sure this element also has the class black. These keys act like black keys, but are not.*/
-  opacity: 0;
+    /* Make sure this element also has the class black. These keys act like black keys, but are not.*/
+    opacity: 0;
 }
 
 .selected {
-
-  border: 1px solid #000000;
-border-width: 3px;
+    border: 1px solid #000000;
+    border-width: 3px;
 }
 
-.animation-trigger{
-  animation-name: playing;
-  animation-iteration-count: 1;
-  animation-duration: 0.3s;
-  animation-direction: alternate;
-
+.animation-trigger {
+    animation-name: playing;
+    animation-iteration-count: 1;
+    animation-duration: 0.3s;
+    animation-direction: alternate;
 }
 
 @keyframes playing {
-0% {
-  border-style: solid;
+    0% {
+        border-style: solid;
+    }
+    50% {
+        border-style: dotted;
+    }
+    100% {
+        border-style: solid;
+    }
 }
-50% {
-border-style: dotted;
-}
-100% {
-border-style: solid;
-}
-}
-
 
 .melody {
-display: flex;
-flex-direction: row;
-width: 100%;
-justify-content: center;
-margin-bottom: 10px;
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    justify-content: center;
+    margin-bottom: 10px;
 }
 .melody-note {
-width: 50px;
-border: 1px solid black;
-text-align: center;
-
+    width: 50px;
+    border: 1px solid black;
+    text-align: center;
 }
