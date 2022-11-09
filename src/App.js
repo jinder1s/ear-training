@@ -5,11 +5,9 @@ import { useEffect, useRef, useState } from 'react'
 import * as Tone from "tone";
 import {
   playNote,
-  playNoteOnKeyPress,
 } from "./tone.fn.js";
 
 
-window.addEventListener("keydown", playNoteOnKeyPress);
 
 const modes = { normal: "Normal", selectValidNodes: "selectValidNodes", createMelody: "createMelody", guessMelody: "guessMelody" }
 const fundemental_piano_notes = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
