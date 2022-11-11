@@ -410,6 +410,11 @@ function App() {
                         className="button guess submit"
                         onClick={() => {
                             if (guessedMelody.length !== melody.length) return;
+
+                            setPreviouslyGuessedMelodies((pgm) => {
+                                return [...pgm, { guess: [...guessedMelody], time: formatISO(Date.now()) }];
+                            });
+
                             if (melody.every((val, index) => val === guessedMelody[index])) {
                                 console.log('You got it!');
                                 setHiddenMelody(false);
@@ -420,20 +425,7 @@ function App() {
                                 console.log('melody is incorrect: %O, %O', melody, guessedMelody);
                             }
 
-                            setPracticeData((pdata) => {
-                                return [
-                                    ...pdata,
-                                    {
-                                        melody: melody,
-                                        attempts: [
-                                            ...previouslyGuessedMelodies,
-                                            { guess: [...guessedMelody], time: formatISO(Date.now()) },
-                                        ],
-                                    },
-                                ];
-                            });
                             setGuessedMelody([]);
-                            setPreviouslyGuessedMelodies([]);
                         }}
                     >
                         Submit
