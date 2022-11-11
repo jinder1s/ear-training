@@ -1,64 +1,102 @@
 import './App.css';
 
 import { useEffect, useRef, useState } from 'react';
+import { useReward } from 'react-rewards';
 
 import * as Tone from 'tone';
-import { playNote } from './tone.fn.js';
+import { Note, Scale, Chord } from '@tonaljs/tonal';
+import * as Tonal from '@tonaljs/tonal';
 
+import { playNote } from './tone.fn.js';
+import { useWebsocket } from './useWebsocket';
+import { formatISO } from 'date-fns';
+
+// window.Scale = Scale;
+// window.Note = Note;
+window.Tonal = Tonal;
 const modes = {
     normal: 'Normal',
     selectValidNodes: 'selectValidNodes',
     createMelody: 'createMelody',
     guessMelody: 'guessMelody',
 };
-const fundemental_piano_notes = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-const flat_piano_notes = [...fundemental_piano_notes];
-const sharp_piano_notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const all_piano_notes = ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B'];
-const piano_notes_mapping = {
-    C: 'C',
-    'C#': 'Db',
-    Db: 'Db',
-    D: 'D',
-    'D#': 'Eb',
-    Eb: 'Eb',
-    E: 'E',
-    F: 'F',
-    'F#': 'Gb',
-    Gb: 'Gb',
-    G: 'G',
-    'G#': 'Ab',
-    Ab: 'Ab',
-    A: 'A',
-    'A#': 'Bb',
-    Bb: 'Bb',
-    B: 'B',
-};
-const black_key_notes = ['Db', 'Eb', 'Gb', 'Ab', 'Bb'];
-const initialMelody = ['C4', 'F4', 'G4', 'C4'];
+const all_piano_notes = Tonal.Range.chromatic(['C3', 'C8']);
+const default_scale_spec = { key: 'C', octave: 4, type: 'major pentatonic' };
+const default_scale = Scale.get(
+    `${default_scale_spec.key}${default_scale_spec.octave} ${default_scale_spec.type}`
+).notes;
+const scaleTypes = Scale.names();
+const allChromaticNotes = Scale.get('C chromatic').notes;
+const initialMelody = [...default_scale];
 function App() {
     const [sequence, setSequence] = useState(null);
+    const [chord, setChord] = useState(null);
     const [synth, setSynth] = useState(null);
     window.synth = synth;
-    const [melody, setMelody] = useState([...initialMelody]);
     const [mode, setMode] = useState('Normal');
-    const [validNotes, setValidNotes] = useState([...flat_piano_notes]);
-    const [hiddenMelody, setHiddenMelody] = useState(false);
+
+    const [validNotes, setValidNotes] = useState([...default_scale]);
+    const [currentScaleSpec, setCurrentScaleSpec] = useState({ ...default_scale_spec });
+
     const [melodyLength, setMelodyLength] = useState(4);
+    const [currentOctave, setCurrentOctave] = useState(4);
+    const [melody, setMelody] = useState([...initialMelody]);
+    const [guessedMelody, setGuessedMelody] = useState([]);
+    const [previouslyGuessedMelodies, setPreviouslyGuessedMelodies] = useState([]);
+    console.log('previouslyGuessedMelodies = ', previouslyGuessedMelodies);
+    const [practiceData, setPracticeData] = useState([]);
+    const [hiddenMelody, setHiddenMelody] = useState(false);
+    const { reward, isAnimating } = useReward('rewardId', 'confetti');
+
     const noteButtonRefs = useRef({});
     const melodyNoteDivRefs = useRef({});
+    const melodyDivRef = useRef();
+    const pianoRef = useRef();
     window.noteRefs = noteButtonRefs;
     window.melodyRefs = melodyNoteDivRefs;
 
     Tone.Transport.bpm.value = 45;
     Tone.Transport.loop = false;
 
+    // example send:       websocketSend(JSON.stringify({ command: 'add-scheduled-event', data: emacsEvent }))
+    const { connected, toggleShouldConnect, websocketSend, sentMessageHistory, receivedMessageHistory } = useWebsocket(
+        'ws://127.0.0.1:44445',
+        () => {
+            console.log('Websocket connection formed!');
+        },
+        (message) => {
+            console.log('Received message over websocket: %O', message);
+        }
+    );
+
     useEffect(() => {
-        const s = new Tone.Synth().toDestination();
+        const s = new Tone.PolySynth(Tone.Synth, {
+            oscillator: {
+                partialCount: 4,
+                partials: [0, 2, 3, 4, 1],
+                phase: 0,
+                type: 'triangle10',
+                harmonicity: 1,
+                modulationIndex: 4,
+                modulationType: 'square',
+                count: 3,
+                spread: 20,
+                width: 0.2,
+                modulationFrequency: 0.4,
+            },
+        }).toDestination();
         setSynth(s);
+
+        const scaleChords = Scale.scaleChords(currentScaleSpec.type);
+        const tonicChord = Chord.getChord(
+            scaleChords.includes('M') ? 'M' : 'm',
+            `${currentScaleSpec.key}${currentScaleSpec.octave}`
+        );
+        setChord(tonicChord.notes);
+        console.log('tonicChord = ', tonicChord);
         const seq = new Tone.Sequence(
             (time, note) => {
-                s.triggerAttackRelease(note, 0.1, time);
+                s.triggerAttackRelease(note.note, 0.1, time);
             },
             [
                 ...initialMelody.map((note, index) => {
@@ -68,7 +106,11 @@ function App() {
         );
         seq.loop = false;
         setSequence(seq);
-    }, [melody]);
+    }, [melody, currentScaleSpec]);
+
+    useEffect(() => {
+        console.log('scale changed!');
+    }, [currentScaleSpec]);
 
     // reset sequence when melody changes
     useEffect(() => {
@@ -76,16 +118,24 @@ function App() {
 
         Tone.Transport.stop();
         if (sequence) sequence.stop();
+
+        const scaleChords = Scale.scaleChords(currentScaleSpec.type);
+        const tonicChord = Chord.getChord(
+            scaleChords.includes('M') ? 'M' : 'm',
+            `${currentScaleSpec.key}${currentScaleSpec.octave}`
+        );
+
+        setChord(tonicChord.notes);
+
         const seq = new Tone.Sequence(
             (time, note) => {
                 synth.triggerAttackRelease(note.note, '8n', time);
-                console.log('note: %O', note);
                 Tone.Draw.schedule(() => {
-                    const currentOctave = 4;
+                    // const currentOctave = 3;
                     // const currentRef = noteButtonRefs.current[note.note.replace(`${currentOctave}`, "")]
 
+                    if (!note.index) return;
                     const currentRef = melodyNoteDivRefs.current[note.index];
-                    console.log('current ref: %O', currentRef);
                     if (currentRef) currentRef.className = currentRef.className + ' animation-trigger';
                 }, time);
             },
@@ -99,12 +149,44 @@ function App() {
         setSequence(seq);
     }, [melody, synth]);
 
+    function onKeyPressed(e) {
+        console.log(e.key);
+        if (mode === modes.guessMelody) {
+            if (e.key === 'Backspace') {
+                setGuessedMelody((gm) => {
+                    return gm.slice(0, -1);
+                });
+            }
+        }
+    }
+    function createRandomMelody() {
+        setGuessedMelody([]);
+        setPreviouslyGuessedMelodies([]);
+        setHiddenMelody(true);
+        setMode(modes.guessMelody);
+        const res = [];
+        for (let i = 0; i < melodyLength; ) {
+            const random = Math.floor(Math.random() * validNotes.length);
+            res.push(validNotes[random]);
+            i++;
+        }
+        console.log('res = ', res);
+        setMelody(res);
+    }
     return (
-        <div className="pianoPage">
+        <div className="pianoPage" onKeyDown={onKeyPressed} tabIndex={0}>
             <div>{`mode: ${mode}`}</div>
             <div className="controls">
                 <button
-                    className="start"
+                    className="button"
+                    onClick={() => {
+                        synth.triggerAttackRelease(chord, 0.5);
+                    }}
+                >
+                    chord
+                </button>
+                <button
+                    className="button"
                     onClick={() => {
                         if (!sequence) return;
                         Tone.Transport.stop();
@@ -118,7 +200,7 @@ function App() {
                 </button>
 
                 <button
-                    className="stop"
+                    className="button"
                     onClick={() => {
                         Tone.Transport.stop();
                         if (sequence) sequence.stop();
@@ -129,116 +211,133 @@ function App() {
             </div>
 
             <div className="controls">
-                <button
-                    className="start"
-                    onClick={() => {
-                        const res = [];
-                        for (let i = 0; i < melodyLength; ) {
-                            const random = Math.floor(Math.random() * validNotes.length);
-                            const currentOctave = 4;
-                            res.push(validNotes[random] + `${currentOctave}`);
-                            i++;
-                        }
-                        console.log('res = ', res);
-                        setMelody(res);
-                    }}
-                >
+                <button className="button" onClick={createRandomMelody}>
                     Create Random Melody
                 </button>
 
-                <button className="start" onClick={() => {}}>
-                    Manually Create Melody
+                <button
+                    className="button"
+                    onClick={() => {
+                        if (mode === modes.selectValidNodes) {
+                            setMode(modes.normal);
+                        } else {
+                            setMode(modes.selectValidNodes);
+                        }
+                    }}
+                >
+                    {mode === modes.selectValidNodes ? 'End Select' : 'Select Notes'}
                 </button>
 
                 <button
-                    className="start"
+                    className="button"
                     onClick={() => {
-                        setMode(modes.selectValidNodes);
+                        if (mode === modes.guessMelody) {
+                            setMode(modes.normal);
+                        } else {
+                            setMode(modes.guessMelody);
+                        }
                     }}
                 >
-                    Select valid notes
+                    {mode === modes.guessMelody ? 'End Guess' : 'Guess Melody'}
                 </button>
                 <button
-                    className="start"
-                    onClick={() => {
-                        setMode(modes.normal);
-                    }}
-                >
-                    normal mode
-                </button>
-                <button
-                    className="start"
+                    className="button"
                     onClick={() => {
                         setHiddenMelody((state) => !state);
                     }}
                 >
-                    Toggle Melody
+                    {hiddenMelody ? 'Show Melody' : 'Hide Melody'}
                 </button>
             </div>
             <div>
                 <label>Select length of melody</label>
                 <select onChange={({ target: { value } }) => setMelodyLength(value)}>
-                    <option selected={melodyLength === 0} value={0}>
-                        0
-                    </option>
-                    <option selected={melodyLength === 1} value={1}>
-                        1
-                    </option>
-                    <option selected={melodyLength === 2} value={2}>
-                        2
-                    </option>
-                    <option selected={melodyLength === 3} value={3}>
-                        3
-                    </option>
-                    <option selected={melodyLength === 4} value={4}>
-                        4
-                    </option>
-                    <option selected={melodyLength === 5} value={5}>
-                        5
-                    </option>
-                    <option selected={melodyLength === 6} value={6}>
-                        6
-                    </option>
-                    <option selected={melodyLength === 7} value={7}>
-                        7
-                    </option>
+                    {Array(20)
+                        .fill()
+
+                        .map((_, index) => {
+                            return (
+                                <option selected={melodyLength === index} value={index}>
+                                    {index}
+                                </option>
+                            );
+                        })}
                 </select>
             </div>
-            <div className="melody">
-                {melody.map((note, index) => {
-                    return (
-                        <div
-                            className="melody-note"
-                            ref={(element) => {
-                                melodyNoteDivRefs.current[index] = element;
-                            }}
-                            onAnimationEnd={(event) => {
-                                console.log('animation end');
-                                const currentRef = melodyNoteDivRefs.current[index];
-                                console.log('currentRef = ', currentRef);
-                                if (currentRef)
-                                    currentRef.className = currentRef.className.replace(' animation-trigger', '');
-                            }}
-                        >
-                            {hiddenMelody ? 'O ' : note}
-                        </div>
-                    );
-                })}
+
+            <div>
+                <label>Select octave</label>
+                <select
+                    onChange={({ target: { value } }) =>
+                        setCurrentScaleSpec((scaleSpec) => {
+                            return { ...scaleSpec, octave: value };
+                        })
+                    }
+                >
+                    {Array(8)
+                        .fill()
+                        .map((_, index) => {
+                            return (
+                                <option selected={currentScaleSpec.octave === index} value={index}>
+                                    {index}
+                                </option>
+                            );
+                        })}
+                </select>
             </div>
-            <div className="piano">
-                {flat_piano_notes.map((note) => {
+
+            <div>
+                <label>Select key</label>
+                <select
+                    onChange={({ target: { value } }) =>
+                        setCurrentScaleSpec((scaleSpec) => {
+                            return { ...scaleSpec, key: value };
+                        })
+                    }
+                >
+                    {allChromaticNotes.map((key) => {
+                        return (
+                            <option selected={currentScaleSpec.octave === key} value={key}>
+                                {key}
+                            </option>
+                        );
+                    })}
+                </select>
+            </div>
+
+            <div>
+                <label>Select Scale Type</label>
+                <select
+                    onChange={({ target: { value } }) =>
+                        setCurrentScaleSpec((scaleSpec) => {
+                            return { ...scaleSpec, key: value };
+                        })
+                    }
+                >
+                    {scaleTypes.map((type) => {
+                        return (
+                            <option selected={currentScaleSpec.type === type} value={type}>
+                                {type}
+                            </option>
+                        );
+                    })}
+                </select>
+            </div>
+            <div className="piano" ref={pianoRef}>
+                {all_piano_notes.map((note) => {
+                    const noteInfo = Note.get(note);
                     return (
                         <button
                             className={
-                                'key ' +
-                                (black_key_notes.includes(piano_notes_mapping[note]) ? 'black' : 'white') +
+                                `key ${noteInfo.pc}Key ` +
+                                (noteInfo.alt ? 'black' : 'white') +
                                 (validNotes.includes(note) ? ' selected' : '')
                             }
                             onClick={() => {
                                 console.log('button being pressed: %O', note);
-                                if (mode === modes.normal) {
-                                    playNote(synth, note + '4');
-                                } else if (mode === modes.selectValidNodes) {
+
+                                if (!(mode === modes.guessMelody)) playNote(synth, note);
+                                if (mode === modes.selectValidNodes) {
                                     const index = validNotes.indexOf(note);
                                     if (index === -1) {
                                         setValidNotes((notes) => {
@@ -247,6 +346,13 @@ function App() {
                                     } else {
                                         setValidNotes((notes) => {
                                             return notes.filter((item) => item !== note);
+                                        });
+                                    }
+                                } else if (mode === modes.guessMelody) {
+                                    if (guessedMelody.length < melody.length) {
+                                        const no = `${note}`;
+                                        setGuessedMelody((gm) => {
+                                            return [...gm, no];
                                         });
                                     }
                                 }
@@ -264,6 +370,118 @@ function App() {
                         </button>
                     );
                 })}
+            </div>
+
+            <div
+                className="melody"
+                id="rewardId"
+                ref={melodyDivRef}
+                onAnimationEnd={(event) => {
+                    if (!melodyDivRef) return;
+                    melodyDivRef.current.className = melodyDivRef.current.className.replace(' success-animation', '');
+                }}
+            >
+                {melody.map((note, index) => {
+                    return (
+                        <div
+                            className={
+                                'melody-note' +
+                                (mode === modes.guessMelody && index === guessedMelody.length ? ' current' : '')
+                            }
+                            ref={(element) => {
+                                melodyNoteDivRefs.current[index] = element;
+                            }}
+                            onAnimationEnd={(event) => {
+                                const currentRef = melodyNoteDivRefs.current[index];
+                                if (currentRef)
+                                    currentRef.className = currentRef.className.replace(' animation-trigger', '');
+                            }}
+                        >
+                            {hiddenMelody || mode === modes.guessMelody
+                                ? index + 1 <= guessedMelody.length
+                                    ? guessedMelody[index]
+                                    : 'O'
+                                : note}
+                        </div>
+                    );
+                })}
+                {mode === modes.guessMelody && (
+                    <button
+                        className="button guess submit"
+                        onClick={() => {
+                            if (guessedMelody.length !== melody.length) return;
+                            if (melody.every((val, index) => val === guessedMelody[index])) {
+                                console.log('You got it!');
+                                setHiddenMelody(false);
+                                setMode(modes.normal);
+
+                                reward();
+                            } else {
+                                console.log('melody is incorrect: %O, %O', melody, guessedMelody);
+                            }
+
+                            setPracticeData((pdata) => {
+                                return [
+                                    ...pdata,
+                                    {
+                                        melody: melody,
+                                        attempts: [
+                                            ...previouslyGuessedMelodies,
+                                            { guess: [...guessedMelody], time: formatISO(Date.now()) },
+                                        ],
+                                    },
+                                ];
+                            });
+                            setGuessedMelody([]);
+                            setPreviouslyGuessedMelodies([]);
+                        }}
+                    >
+                        Submit
+                    </button>
+                )}
+            </div>
+            <div className="melodies">
+                {previouslyGuessedMelodies.reverse().map(({ guess: pMelody }) => {
+                    return (
+                        <div className="melody">
+                            {pMelody.map((note, index) => {
+                                const note_correct = note === melody[index];
+                                const note_in_melody = melody.includes(note);
+                                return (
+                                    <div
+                                        className={
+                                            'melody-note' +
+                                            (note_correct
+                                                ? ' correct'
+                                                : note_in_melody
+                                                ? ' partially-correct'
+                                                : ' wrong')
+                                        }
+                                    >
+                                        {note}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })}
+            </div>
+            <div>
+                <button className="button" onClick={toggleShouldConnect}>
+                    {`ws: ${connected ? 'connected' : 'disconnected'}`}
+                </button>
+                {connected && (
+                    <button
+                        className="button"
+                        onClick={() => {
+                            websocketSend(
+                                JSON.stringify({ command: 'save-practice-data', data: JSON.stringify(practiceData) })
+                            );
+                        }}
+                    >
+                        Send Data
+                    </button>
+                )}
             </div>
         </div>
     );

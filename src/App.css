@@ -7,14 +7,12 @@
 .controls {
     display: flex;
     flex-direction: row;
+
+    flex-wrap: wrap;
 }
-.stop {
-    border: 1px solid red;
-    margin: 20px;
-}
-.start {
+.button {
     border: 1px solid black;
-    margin: 20px;
+    margin: 5px;
 }
 .piano {
     display: flex;
@@ -45,6 +43,11 @@
     align-self: flex-start;
     opacity: 0.9;
 }
+.EKey,
+.BKey {
+    /*TODO: this is not very responsive */
+    margin-right: 10px;
+}
 .opaque {
     /* Make sure this element also has the class black. These keys act like black keys, but are not.*/
     opacity: 0;
@@ -74,6 +77,31 @@
     }
 }
 
+.success-animation {
+    animation-name: correct-baby;
+    animation-iteration-count: 1;
+    animation-duration: 5s;
+    animation-direction: ease-in-out;
+}
+
+@keyframes correct-baby {
+    from {
+        background: linear-gradient(
+            90deg,
+            rgba(131, 58, 180, 1) 0%,
+            rgba(253, 29, 29, 1) 50%,
+            rgba(252, 176, 69, 1) 100%
+        );
+        background-position: 0% 50% 100%;
+    }
+    50% {
+        background-position: 100% 50% 0%;
+    }
+    to {
+        background: inherit;
+    }
+}
+
 .melody {
     display: flex;
     flex-direction: row;
@@ -85,4 +113,18 @@
     width: 50px;
     border: 1px solid black;
     text-align: center;
+}
+
+.current {
+    border-width: 4px;
+}
+
+.correct {
+    background-color: lightgreen;
+}
+.wrong {
+    background-color: red;
+}
+.partially-correct {
+    background-color: skyblue;
 }
