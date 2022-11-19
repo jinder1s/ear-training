@@ -2,6 +2,7 @@ import './App.css';
 
 import { useEffect, useRef, useState } from 'react';
 import { useReward } from 'react-rewards';
+import lodash from 'lodash';
 
 import * as Tone from 'tone';
 import { Note, Scale, Chord } from '@tonaljs/tonal';
@@ -14,19 +15,26 @@ import { formatISO } from 'date-fns';
 // window.Scale = Scale;
 // window.Note = Note;
 window.Tonal = Tonal;
+
+window.lodash = lodash;
 const modes = {
     normal: 'Normal',
     selectValidNodes: 'selectValidNodes',
     createMelody: 'createMelody',
     guessMelody: 'guessMelody',
 };
-const all_piano_notes = Tonal.Range.chromatic(['C3', 'C8']);
-const default_scale_spec = { key: 'C', octave: 4, type: 'major pentatonic' };
+const default_scale_spec = { key: 'D', octave: 3, type: 'major' };
 const default_scale = Scale.get(
     `${default_scale_spec.key}${default_scale_spec.octave} ${default_scale_spec.type}`
 ).notes;
-const scaleTypes = Scale.names();
-const allChromaticNotes = Scale.get('C chromatic').notes;
+const all_piano_notes = Tonal.Range.chromatic(['C1', 'C8'], {
+    sharps: default_scale.some((key) => {
+        return key.includes('#');
+    }),
+});
+const scaleTypes = ['major', 'minor'];
+const scaleChordProgression = { major: [0, 3, 4, 0] };
+const allChromaticNotes = Scale.get('D chromatic').notes;
 const initialMelody = [...default_scale];
 function App() {
     const [sequence, setSequence] = useState(null);
@@ -43,8 +51,8 @@ function App() {
     const [melody, setMelody] = useState([...initialMelody]);
     const [guessedMelody, setGuessedMelody] = useState([]);
     const [previouslyGuessedMelodies, setPreviouslyGuessedMelodies] = useState([]);
-    console.log('previouslyGuessedMelodies = ', previouslyGuessedMelodies);
     const [practiceData, setPracticeData] = useState([]);
+    window.practiceData = practiceData;
     const [hiddenMelody, setHiddenMelody] = useState(false);
     const { reward, isAnimating } = useReward('rewardId', 'confetti');
 
@@ -71,32 +79,33 @@ function App() {
 
     useEffect(() => {
         const s = new Tone.PolySynth(Tone.Synth, {
+            envelope: {
+                attack: 0.008,
+                attackCurve: 'linear',
+                decay: 0.3,
+                decayCurve: 'exponential',
+                release: 0.5,
+                releaseCurve: 'exponential',
+                sustain: 0.1,
+            },
             oscillator: {
-                partialCount: 4,
-                partials: [0, 2, 3, 4, 1],
-                phase: 0,
-                type: 'triangle10',
-                harmonicity: 1,
+                phase: 90,
+                partials: new Array(8).fill(0).map(() => Math.random()),
+                type: 'sawtooth2',
+                harmonicity: 4,
                 modulationIndex: 4,
-                modulationType: 'square',
-                count: 3,
+                modulationType: 'sine2',
+                count: 5,
                 spread: 20,
-                width: 0.2,
+                width: 0.5,
                 modulationFrequency: 0.4,
             },
         }).toDestination();
         setSynth(s);
 
-        const scaleChords = Scale.scaleChords(currentScaleSpec.type);
-        const tonicChord = Chord.getChord(
-            scaleChords.includes('M') ? 'M' : 'm',
-            `${currentScaleSpec.key}${currentScaleSpec.octave}`
-        );
-        setChord(tonicChord.notes);
-        console.log('tonicChord = ', tonicChord);
         const seq = new Tone.Sequence(
             (time, note) => {
-                s.triggerAttackRelease(note.note, 0.1, time);
+                s.triggerAttackRelease(note.note, '8n', time);
             },
             [
                 ...initialMelody.map((note, index) => {
@@ -106,26 +115,61 @@ function App() {
         );
         seq.loop = false;
         setSequence(seq);
-    }, [melody, currentScaleSpec]);
+        let currentKey = Tonal.Key.majorKey(currentScaleSpec.key);
+        if (currentScaleSpec.type === 'minor') {
+            const currentKey = Tonal.Key.minorKey(currentScaleSpec.key);
+        }
+        console.log('currentKey: %O', currentKey);
+
+        const chordProgression = scaleChordProgression[currentScaleSpec.type].map((index) => {
+            return {
+                chord: Tonal.Chord.get(currentKey.chords[index])
+                    .notes.slice(0, 3)
+                    .map((note) => `${note}${currentScaleSpec.octave}`),
+            };
+        });
+        console.log('chordProgression: %O', chordProgression);
+        var chordPart = new Tone.Sequence(function (time, chord) {
+            s.triggerAttackRelease(chord.chord, '8n', time);
+        }, chordProgression);
+
+        chordPart.loop = false;
+        setChord(chordPart);
+    }, []);
+    useEffect(() => {
+        addToPracticeData('switch-mode', { new_mode: mode });
+    }, [mode]);
 
     useEffect(() => {
-        console.log('scale changed!');
+        addToPracticeData('switch-scale', { new_scale: currentScaleSpec });
     }, [currentScaleSpec]);
-
-    // reset sequence when melody changes
     useEffect(() => {
-        if (!synth) return;
+        addToPracticeData('new-melody', { melody: [...melody] });
+    }, [melody]);
 
-        Tone.Transport.stop();
-        if (sequence) sequence.stop();
+    useEffect(() => {
+        addToPracticeData('switch-melody-length', { length: melodyLength });
+    }, [melodyLength]);
 
+    useEffect(() => {
+        addToPracticeData('switch-valid-notes', { notes: [...validNotes] });
+    }, [validNotes]);
+
+    useEffect(() => {
         const scaleChords = Scale.scaleChords(currentScaleSpec.type);
         const tonicChord = Chord.getChord(
             scaleChords.includes('M') ? 'M' : 'm',
             `${currentScaleSpec.key}${currentScaleSpec.octave}`
         );
 
-        setChord(tonicChord.notes);
+        // setChord(tonicChord.notes);
+    }, [currentScaleSpec]);
+    // reset sequence when melody changes
+    useEffect(() => {
+        if (!synth) return;
+
+        Tone.Transport.stop();
+        if (sequence) sequence.stop();
 
         const seq = new Tone.Sequence(
             (time, note) => {
@@ -150,179 +194,78 @@ function App() {
     }, [melody, synth]);
 
     function onKeyPressed(e) {
-        console.log(e.key);
-        if (mode === modes.guessMelody) {
-            if (e.key === 'Backspace') {
-                setGuessedMelody((gm) => {
-                    return gm.slice(0, -1);
-                });
-            }
+        if (e.key === 'Backspace') {
+            setGuessedMelody((gm) => {
+                return gm.slice(0, -1);
+            });
+            e.stopPropagation();
+            e.preventDefault();
+        } else if (e.code === 'Space') {
+            playMelody();
+
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (e.code === 'KeyR') {
+            playChord();
+
+            e.preventDefault();
+            e.stopPropagation();
+        } else if (e.code === 'KeyN') {
+            createRandomMelody();
+
+            e.preventDefault();
+            e.stopPropagation();
         }
     }
     function createRandomMelody() {
         setGuessedMelody([]);
         setPreviouslyGuessedMelodies([]);
         setHiddenMelody(true);
-        setMode(modes.guessMelody);
         const res = [];
         for (let i = 0; i < melodyLength; ) {
             const random = Math.floor(Math.random() * validNotes.length);
             res.push(validNotes[random]);
             i++;
         }
-        console.log('res = ', res);
         setMelody(res);
+        setMode(modes.guessMelody);
+    }
+    function playMelody() {
+        if (!sequence) return;
+
+        if (chord) chord.stop();
+        Tone.Transport.stop();
+        sequence.stop();
+        Tone.start();
+        Tone.Transport.start();
+        sequence.start(0);
+        addToPracticeData('play-melody');
+    }
+
+    function playChord() {
+        if (!chord) return;
+        if (sequence) sequence.stop();
+        Tone.Transport.stop();
+        chord.stop();
+        Tone.start();
+        Tone.Transport.start();
+        chord.start(0);
+        addToPracticeData('play-chord');
+    }
+    function addToPracticeData(type, data = null) {
+        setPracticeData((pg) => {
+            return [
+                ...pg,
+                {
+                    type: type,
+                    time: formatISO(Date.now()),
+                    ...(data && { data: data }),
+                },
+            ];
+        });
     }
     return (
         <div className="pianoPage" onKeyDown={onKeyPressed} tabIndex={0}>
-            <div>{`mode: ${mode}`}</div>
-            <div className="controls">
-                <button
-                    className="button"
-                    onClick={() => {
-                        synth.triggerAttackRelease(chord, 0.5);
-                    }}
-                >
-                    chord
-                </button>
-                <button
-                    className="button"
-                    onClick={() => {
-                        if (!sequence) return;
-                        Tone.Transport.stop();
-                        sequence.stop();
-                        Tone.start();
-                        Tone.Transport.start();
-                        sequence.start(0);
-                    }}
-                >
-                    Play
-                </button>
-
-                <button
-                    className="button"
-                    onClick={() => {
-                        Tone.Transport.stop();
-                        if (sequence) sequence.stop();
-                    }}
-                >
-                    Stop
-                </button>
-            </div>
-
-            <div className="controls">
-                <button className="button" onClick={createRandomMelody}>
-                    Create Random Melody
-                </button>
-
-                <button
-                    className="button"
-                    onClick={() => {
-                        if (mode === modes.selectValidNodes) {
-                            setMode(modes.normal);
-                        } else {
-                            setMode(modes.selectValidNodes);
-                        }
-                    }}
-                >
-                    {mode === modes.selectValidNodes ? 'End Select' : 'Select Notes'}
-                </button>
-
-                <button
-                    className="button"
-                    onClick={() => {
-                        if (mode === modes.guessMelody) {
-                            setMode(modes.normal);
-                        } else {
-                            setMode(modes.guessMelody);
-                        }
-                    }}
-                >
-                    {mode === modes.guessMelody ? 'End Guess' : 'Guess Melody'}
-                </button>
-                <button
-                    className="button"
-                    onClick={() => {
-                        setHiddenMelody((state) => !state);
-                    }}
-                >
-                    {hiddenMelody ? 'Show Melody' : 'Hide Melody'}
-                </button>
-            </div>
-            <div>
-                <label>Select length of melody</label>
-                <select onChange={({ target: { value } }) => setMelodyLength(value)}>
-                    {Array(20)
-                        .fill()
-
-                        .map((_, index) => {
-                            return (
-                                <option selected={melodyLength === index} value={index}>
-                                    {index}
-                                </option>
-                            );
-                        })}
-                </select>
-            </div>
-
-            <div>
-                <label>Select octave</label>
-                <select
-                    onChange={({ target: { value } }) =>
-                        setCurrentScaleSpec((scaleSpec) => {
-                            return { ...scaleSpec, octave: value };
-                        })
-                    }
-                >
-                    {Array(8)
-                        .fill()
-                        .map((_, index) => {
-                            return (
-                                <option selected={currentScaleSpec.octave === index} value={index}>
-                                    {index}
-                                </option>
-                            );
-                        })}
-                </select>
-            </div>
-
-            <div>
-                <label>Select key</label>
-                <select
-                    onChange={({ target: { value } }) =>
-                        setCurrentScaleSpec((scaleSpec) => {
-                            return { ...scaleSpec, key: value };
-                        })
-                    }
-                >
-                    {allChromaticNotes.map((key) => {
-                        return (
-                            <option selected={currentScaleSpec.octave === key} value={key}>
-                                {key}
-                            </option>
-                        );
-                    })}
-                </select>
-            </div>
-
-            <div>
-                <label>Select Scale Type</label>
-                <select
-                    onChange={({ target: { value } }) =>
-                        setCurrentScaleSpec((scaleSpec) => {
-                            return { ...scaleSpec, key: value };
-                        })
-                    }
-                >
-                    {scaleTypes.map((type) => {
-                        return (
-                            <option selected={currentScaleSpec.type === type} value={type}>
-                                {type}
-                            </option>
-                        );
-                    })}
-                </select>
-            </div>
             <div className="piano" ref={pianoRef}>
                 {all_piano_notes.map((note) => {
                     const noteInfo = Note.get(note);
@@ -372,6 +315,30 @@ function App() {
                 })}
             </div>
 
+            <div className="main controls">
+                <button className="button play" onClick={playMelody}>
+                    Play
+                </button>
+
+                <button
+                    className="button stop"
+                    onClick={() => {
+                        Tone.Transport.stop();
+                        if (sequence) sequence.stop();
+                        addToPracticeData('stop-melody');
+                    }}
+                >
+                    Stop
+                </button>
+                <button className="button chord" onClick={playChord}>
+                    chord
+                </button>
+
+                <button className="button new" onClick={createRandomMelody}>
+                    New Melody
+                </button>
+            </div>
+
             <div
                 className="melody"
                 id="rewardId"
@@ -408,11 +375,21 @@ function App() {
                 {mode === modes.guessMelody && (
                     <button
                         className="button guess submit"
-                        onClick={() => {
+                        onClick={(e) => {
                             if (guessedMelody.length !== melody.length) return;
+                            setPracticeData((pd) => {
+                                return [
+                                    ...pd,
+                                    {
+                                        type: 'guess',
+                                        data: { melody: [...guessedMelody] },
+                                        time: formatISO(Date.now()),
+                                    },
+                                ];
+                            });
 
                             setPreviouslyGuessedMelodies((pgm) => {
-                                return [...pgm, { guess: [...guessedMelody], time: formatISO(Date.now()) }];
+                                return [...pgm, { guess: [...guessedMelody] }];
                             });
 
                             if (melody.every((val, index) => val === guessedMelody[index])) {
@@ -458,22 +435,143 @@ function App() {
                     );
                 })}
             </div>
-            <div>
-                <button className="button" onClick={toggleShouldConnect}>
-                    {`ws: ${connected ? 'connected' : 'disconnected'}`}
-                </button>
-                {connected && (
+            <div className="advanced">
+                <div className="controls">
                     <button
                         className="button"
                         onClick={() => {
-                            websocketSend(
-                                JSON.stringify({ command: 'save-practice-data', data: JSON.stringify(practiceData) })
-                            );
+                            if (mode === modes.selectValidNodes) {
+                                setMode(modes.normal);
+                            } else {
+                                setMode(modes.selectValidNodes);
+                            }
                         }}
                     >
-                        Send Data
+                        {mode === modes.selectValidNodes ? 'End Select' : 'Select Notes'}
                     </button>
-                )}
+
+                    <button
+                        className="button"
+                        onClick={() => {
+                            if (mode === modes.guessMelody) {
+                                setMode(modes.normal);
+                            } else {
+                                setMode(modes.guessMelody);
+                            }
+                        }}
+                    >
+                        {mode === modes.guessMelody ? 'End Guess' : 'Guess Melody'}
+                    </button>
+                    <button
+                        className="button"
+                        onClick={() => {
+                            setHiddenMelody((state) => !state);
+                        }}
+                    >
+                        {hiddenMelody ? 'Show Melody' : 'Hide Melody'}
+                    </button>
+                </div>
+                <div>
+                    <label>Select length of melody</label>
+                    <select onChange={({ target: { value } }) => setMelodyLength(value)}>
+                        {Array(20)
+                            .fill()
+
+                            .map((_, index) => {
+                                return (
+                                    <option selected={melodyLength === index} value={index}>
+                                        {index}
+                                    </option>
+                                );
+                            })}
+                    </select>
+                </div>
+
+                <div>
+                    <label>Select octave</label>
+                    <select
+                        onChange={({ target: { value } }) =>
+                            setCurrentScaleSpec((scaleSpec) => {
+                                return { ...scaleSpec, octave: value };
+                            })
+                        }
+                    >
+                        {Array(8)
+                            .fill()
+                            .map((_, index) => {
+                                return (
+                                    <option selected={currentScaleSpec.octave === index} value={index}>
+                                        {index}
+                                    </option>
+                                );
+                            })}
+                    </select>
+                </div>
+
+                <div>
+                    <label>Select key</label>
+                    <select
+                        onChange={({ target: { value } }) =>
+                            setCurrentScaleSpec((scaleSpec) => {
+                                return { ...scaleSpec, key: value };
+                            })
+                        }
+                    >
+                        {allChromaticNotes.map((key) => {
+                            return (
+                                <option selected={currentScaleSpec.key === key} value={key}>
+                                    {key}
+                                </option>
+                            );
+                        })}
+                    </select>
+                </div>
+
+                <div>
+                    <label>Select Scale Type</label>
+                    <select
+                        onChange={({ target: { value } }) =>
+                            setCurrentScaleSpec((scaleSpec) => {
+                                return { ...scaleSpec, type: value };
+                            })
+                        }
+                    >
+                        {scaleTypes.map((type) => {
+                            return (
+                                <option selected={currentScaleSpec.type === type} value={type}>
+                                    {type}
+                                </option>
+                            );
+                        })}
+                    </select>
+                </div>
+                <div>
+                    <button className="button" onClick={toggleShouldConnect}>
+                        {`ws: ${connected ? 'connected' : 'disconnected'}`}
+                    </button>
+                    {connected && (
+                        <button
+                            className="button"
+                            onClick={() => {
+                                websocketSend(
+                                    JSON.stringify({
+                                        command: 'save-practice-data',
+                                        data: JSON.stringify(lodash.uniqWith(practiceData, lodash.isEqual)),
+                                    })
+                                );
+                                setPracticeData([]);
+                            }}
+                        >
+                            Send Data
+                        </button>
+                    )}
+                </div>
+            </div>
+            <div>
+                {connected &&
+                    practiceData.map((datum) => {
+                        return <div>{JSON.stringify(datum)}</div>;
+                    })}
             </div>
         </div>
     );
