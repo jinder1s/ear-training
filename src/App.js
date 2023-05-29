@@ -35,7 +35,9 @@ const all_piano_notes = Tonal.Range.chromatic(['C1', 'C8'], {
 const scaleTypes = ['major', 'minor'];
 const scaleChordProgression = { major: [0, 3, 4, 0] };
 const allChromaticNotes = Scale.get('D chromatic').notes;
-const initialMelody = [...default_scale];
+const initialMelody = default_scale.map((note, index) => {
+    return { beat: [note], guessNote: note, index: index };
+});
 function App() {
     const [sequence, setSequence] = useState(null);
     const [chord, setChord] = useState(null);
@@ -47,13 +49,14 @@ function App() {
     const [currentScaleSpec, setCurrentScaleSpec] = useState({ ...default_scale_spec });
 
     const [melodyLength, setMelodyLength] = useState(4);
-    const [currentOctave, setCurrentOctave] = useState(4);
     const [melody, setMelody] = useState([...initialMelody]);
+    console.log('melody = ', melody);
     const [guessedMelody, setGuessedMelody] = useState([]);
     const [previouslyGuessedMelodies, setPreviouslyGuessedMelodies] = useState([]);
     const [practiceData, setPracticeData] = useState([]);
     window.practiceData = practiceData;
     const [hiddenMelody, setHiddenMelody] = useState(false);
+    const [includeBaseNote, setIncludeBaseNote] = useState(true);
     const { reward, isAnimating } = useReward('rewardId', 'confetti');
 
     const noteButtonRefs = useRef({});
@@ -80,46 +83,24 @@ function App() {
     useEffect(() => {
         const s = new Tone.PolySynth(Tone.Synth, {
             envelope: {
-                attack: 0.008,
+                attack: 0.25,
                 attackCurve: 'linear',
                 decay: 0.3,
                 decayCurve: 'exponential',
-                release: 0.5,
+                release: 0.1,
                 releaseCurve: 'exponential',
-                sustain: 0.1,
+                sustain: 0.0,
             },
             oscillator: {
-                phase: 90,
-                partials: new Array(8).fill(0).map(() => Math.random()),
-                type: 'sawtooth2',
-                harmonicity: 4,
-                modulationIndex: 4,
                 modulationType: 'sine2',
-                count: 5,
-                spread: 20,
-                width: 0.5,
-                modulationFrequency: 0.4,
             },
         }).toDestination();
         setSynth(s);
 
-        const seq = new Tone.Sequence(
-            (time, note) => {
-                s.triggerAttackRelease(note.note, '8n', time);
-            },
-            [
-                ...initialMelody.map((note, index) => {
-                    return { note: note, index: index };
-                }),
-            ]
-        );
-        seq.loop = false;
-        setSequence(seq);
         let currentKey = Tonal.Key.majorKey(currentScaleSpec.key);
         if (currentScaleSpec.type === 'minor') {
             const currentKey = Tonal.Key.minorKey(currentScaleSpec.key);
         }
-        console.log('currentKey: %O', currentKey);
 
         const chordProgression = scaleChordProgression[currentScaleSpec.type].map((index) => {
             return {
@@ -128,9 +109,8 @@ function App() {
                     .map((note) => `${note}${currentScaleSpec.octave}`),
             };
         });
-        console.log('chordProgression: %O', chordProgression);
         var chordPart = new Tone.Sequence(function (time, chord) {
-            s.triggerAttackRelease(chord.chord, '8n', time);
+            s.triggerAttackRelease(chord.chord, '4n', time);
         }, chordProgression);
 
         chordPart.loop = false;
@@ -171,24 +151,18 @@ function App() {
         Tone.Transport.stop();
         if (sequence) sequence.stop();
 
-        const seq = new Tone.Sequence(
-            (time, note) => {
-                synth.triggerAttackRelease(note.note, '8n', time);
-                Tone.Draw.schedule(() => {
-                    // const currentOctave = 3;
-                    // const currentRef = noteButtonRefs.current[note.note.replace(`${currentOctave}`, "")]
+        const seq = new Tone.Sequence((time, note) => {
+            console.log('note: %O', note);
+            synth.triggerAttackRelease(note.beat, '6n', time);
+            Tone.Draw.schedule(() => {
+                // const currentOctave = 3;
+                // const currentRef = noteButtonRefs.current[note.note.replace(`${currentOctave}`, "")]
 
-                    if (!note.index) return;
-                    const currentRef = melodyNoteDivRefs.current[note.index];
-                    if (currentRef) currentRef.className = currentRef.className + ' animation-trigger';
-                }, time);
-            },
-            [
-                ...melody.map((note, index) => {
-                    return { note: note, index: index };
-                }),
-            ]
-        );
+                if (!note.index) return;
+                const currentRef = melodyNoteDivRefs.current[note.index];
+                if (currentRef) currentRef.className = currentRef.className + ' animation-trigger';
+            }, time);
+        }, melody);
         seq.loop = false;
         setSequence(seq);
     }, [melody, synth]);
@@ -224,7 +198,12 @@ function App() {
         const res = [];
         for (let i = 0; i < melodyLength; ) {
             const random = Math.floor(Math.random() * validNotes.length);
-            res.push(validNotes[random]);
+            const guessNote = validNotes[random];
+            const additionalNotes = [];
+            if (includeBaseNote) {
+                additionalNotes.push(`${currentScaleSpec.key}${currentScaleSpec.octave}`);
+            }
+            res.push({ beat: [...additionalNotes, guessNote], guessNote: guessNote, index: i });
             i++;
         }
         setMelody(res);
@@ -348,7 +327,8 @@ function App() {
                     melodyDivRef.current.className = melodyDivRef.current.className.replace(' success-animation', '');
                 }}
             >
-                {melody.map((note, index) => {
+                {melody.map((beat, index) => {
+                    const note = beat.guessNote;
                     return (
                         <div
                             className={
@@ -392,7 +372,7 @@ function App() {
                                 return [...pgm, { guess: [...guessedMelody] }];
                             });
 
-                            if (melody.every((val, index) => val === guessedMelody[index])) {
+                            if (melody.every((val, index) => val.guessNote === guessedMelody[index])) {
                                 console.log('You got it!');
                                 setHiddenMelody(false);
                                 setMode(modes.normal);
@@ -414,8 +394,8 @@ function App() {
                     return (
                         <div className="melody">
                             {pMelody.map((note, index) => {
-                                const note_correct = note === melody[index];
-                                const note_in_melody = melody.includes(note);
+                                const note_correct = note === melody[index].guessNote;
+                                const note_in_melody = melody.map((beat) => beat.guessNote).includes(note);
                                 return (
                                     <div
                                         className={
@@ -448,6 +428,15 @@ function App() {
                         }}
                     >
                         {mode === modes.selectValidNodes ? 'End Select' : 'Select Notes'}
+                    </button>
+
+                    <button
+                        className="button "
+                        onClick={() => {
+                            setIncludeBaseNote((state) => !state);
+                        }}
+                    >
+                        {includeBaseNote ? 'S: Base' : 'S: no Base'}
                     </button>
 
                     <button
